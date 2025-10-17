@@ -5,14 +5,17 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from fach_scraper_core import scrape_fac_habitat
+import unicodedata
 
 # === CONFIG ===
 DEPARTMENTS = ["75", "92", "93", "94", "95", "78", "77"]
 SENDER_EMAIL = "ines.abdelaziz19@gmail.com"
-SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")  # safer
+SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
 RECIPIENT_EMAIL = "ines.abdelaziz19@gmail.com"
+
+# Persist ONLY the stable keys here (not the whole table)
 STATE_FILE = "last_results.csv"
-LAST_DAILY_FILE = "last_daily_sent.txt"  # track last daily email date
+LAST_DAILY_FILE = "last_daily_sent.txt"
 
 
 # === UTILS ===
@@ -21,24 +24,66 @@ def send_email(subject, body, html_body=None):
     msg["From"] = f"Fac-Habitat Bot <{SENDER_EMAIL}>"
     msg["To"] = RECIPIENT_EMAIL
     msg["Subject"] = subject
-
     msg.attach(MIMEText(body, "plain"))
     if html_body:
         msg.attach(MIMEText(html_body, "html"))
-
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(SENDER_EMAIL, SENDER_PASSWORD)
         server.send_message(msg)
 
 
-def get_previous_df():
-    if os.path.exists(STATE_FILE):
-        return pd.read_csv(STATE_FILE)
-    return pd.DataFrame()
+def _normalize(s: str) -> str:
+    if pd.isna(s):
+        return ""
+    s = str(s).strip().lower()
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    return " ".join(s.split())  # collapse spaces
 
 
-def save_current_df(df):
-    df.to_csv(STATE_FILE, index=False)
+def add_stable_key(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    has_link = "Link" in df.columns and df["Link"].notna().any()
+    if has_link:
+        df["__key__"] = df["Link"].astype(str).str.strip()
+    else:
+        # fallback: Residence + City (or Ville)
+        city_col = (
+            "City"
+            if "City" in df.columns
+            else ("Ville" if "Ville" in df.columns else None)
+        )
+        if "Residence" not in df.columns or city_col is None:
+            # last resort: normalize Residence only
+            df["__key__"] = df.apply(
+                lambda r: _normalize(r.get("Residence", "")), axis=1
+            )
+        else:
+            df["__key__"] = df.apply(
+                lambda r: f"{_normalize(r['Residence'])}::{_normalize(r[city_col])}",
+                axis=1,
+            )
+    return df
+
+
+def load_previous_keys() -> set:
+    if not os.path.exists(STATE_FILE):
+        return set()
+    try:
+        prev = pd.read_csv(STATE_FILE)
+        # backward compatible: the state file might be a full table from older runs
+        if "__key__" in prev.columns:
+            return set(prev["__key__"].astype(str))
+        # Try to reconstruct keys if old file saved a full df
+        prev = add_stable_key(prev)
+        return set(prev["__key__"].astype(str))
+    except Exception:
+        return set()
+
+
+def save_current_keys(keys: set):
+    pd.DataFrame({"__key__": sorted(keys)}).to_csv(STATE_FILE, index=False)
 
 
 def should_send_daily_email():
@@ -62,45 +107,42 @@ if __name__ == "__main__":
     print(f"=== Run at {now.strftime('%Y-%m-%d %H:%M:%S')} ===")
 
     df = scrape_fac_habitat(DEPARTMENTS)
+    df = add_stable_key(df)
     print(f"Scraped {len(df)} rows")
 
-    previous_df = get_previous_df()
-    has_new = False
+    current_keys = set(df["__key__"].astype(str))
+    previous_keys = load_previous_keys()
 
-    if previous_df.empty and not df.empty:
-        has_new = True
-    elif not previous_df.empty:
-        # Compare by a unique column (like 'Residence' or 'Link')
-        if "Residence" in df.columns:
-            new_rows = df[~df["Residence"].isin(previous_df["Residence"])]
-        else:
-            new_rows = df[~df.apply(tuple, 1).isin(previous_df.apply(tuple, 1))]
-        has_new = not new_rows.empty
+    # Compute true "new" residences by key (order/other fields ignored)
+    new_keys = current_keys - previous_keys
+    has_new = len(new_keys) > 0
 
-    # --- Send new availability email ---
+    # --- Send new availability email (only the truly new rows) ---
     if has_new:
-        html_table = df.to_html(index=False, escape=False)
+        new_rows = df[df["__key__"].isin(new_keys)].drop(columns=["__key__"])
+        html_table = new_rows.to_html(index=False, escape=False)
         send_email(
-            subject=f"Fac-Habitat : {len(df)} résidences disponibles (nouvelles détectées)",
+            subject=f"Fac-Habitat : {len(new_rows)} nouvelle(s) résidence(s) disponible(s)",
             body="De nouvelles disponibilités ont été trouvées :",
             html_body=html_table,
         )
-        save_current_df(df)
-        print("📧 Sent NEW availability email")
+        # Save ONLY the current keys snapshot
+        save_current_keys(current_keys)
+        print(f"📧 Sent NEW availability email for {len(new_rows)} item(s)")
 
     # --- Send daily summary (once per day) ---
     if should_send_daily_email():
-        html_table = df.to_html(index=False, escape=False)
-        if df.empty:
+        summary_df = df.drop(columns=["__key__"]) if "__key__" in df.columns else df
+        if summary_df.empty:
             send_email(
                 subject=f"Fac-Habitat – Rapport du {now.strftime('%d %B %Y')}",
                 body="Aucune résidence disponible aujourd’hui.",
             )
         else:
             send_email(
-                subject=f"Fac-Habitat – Rapport du {now.strftime('%d %B %Y')} ({len(df)} dispo)",
+                subject=f"Fac-Habitat – Rapport du {now.strftime('%d %B %Y')} ({len(summary_df)} dispo)",
                 body="Voici le rapport quotidien des résidences disponibles :",
-                html_body=html_table,
+                html_body=summary_df.to_html(index=False, escape=False),
             )
         update_daily_marker()
         print("🗓️ Sent DAILY summary email")
