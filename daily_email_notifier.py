@@ -111,12 +111,15 @@ if __name__ == "__main__":
     print(f"Scraped {len(df)} rows")
 
     current_keys = set(df["__key__"].astype(str))
+
     previous_keys = load_previous_keys()
 
     # Compute true "new" residences by key (order/other fields ignored)
     new_keys = current_keys - previous_keys
     has_new = len(new_keys) > 0
-
+    print(
+        f"[DEBUG] Current keys: {len(current_keys)}, Previous keys: {len(previous_keys)}, New keys: {len(new_keys)}"
+    )
     # --- Send new availability email (only the truly new rows) ---
     if has_new:
         new_rows = df[df["__key__"].isin(new_keys)].drop(columns=["__key__"])
