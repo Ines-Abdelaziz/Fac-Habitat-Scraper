@@ -44,26 +44,40 @@ def _normalize(s: str) -> str:
 def add_stable_key(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    has_link = "Link" in df.columns and df["Link"].notna().any()
-    if has_link:
-        df["__key__"] = df["Link"].astype(str).str.strip()
-    else:
-        # fallback: Residence + City (or Ville)
-        city_col = (
-            "City"
-            if "City" in df.columns
-            else ("Ville" if "Ville" in df.columns else None)
+    # Detect possible column names
+    link_col = None
+    for candidate in ["Link", "link", "url", "URL"]:
+        if candidate in df.columns:
+            link_col = candidate
+            break
+
+    residence_col = None
+    for candidate in ["Residence", "résidence", "titre"]:
+        if candidate in df.columns:
+            residence_col = candidate
+            break
+
+    city_col = None
+    for candidate in ["City", "Ville", "ville"]:
+        if candidate in df.columns:
+            city_col = candidate
+            break
+
+    # Priority 1: unique URL
+    if link_col:
+        df["__key__"] = df[link_col].astype(str).str.strip()
+    # Priority 2: Residence + City
+    elif residence_col and city_col:
+        df["__key__"] = df.apply(
+            lambda r: f"{_normalize(r[residence_col])}::{_normalize(r[city_col])}",
+            axis=1,
         )
-        if "Residence" not in df.columns or city_col is None:
-            # last resort: normalize Residence only
-            df["__key__"] = df.apply(
-                lambda r: _normalize(r.get("Residence", "")), axis=1
-            )
-        else:
-            df["__key__"] = df.apply(
-                lambda r: f"{_normalize(r['Residence'])}::{_normalize(r[city_col])}",
-                axis=1,
-            )
+    # Fallback: Residence only
+    elif residence_col:
+        df["__key__"] = df[residence_col].apply(_normalize)
+    else:
+        df["__key__"] = df.index.astype(str)
+
     return df
 
 
