@@ -11,7 +11,13 @@ import unicodedata
 DEPARTMENTS = ["75", "92", "93", "94", "95", "78", "77"]
 SENDER_EMAIL = "ines.abdelaziz19@gmail.com"
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
-RECIPIENT_EMAIL = "ines.abdelaziz19@gmail.com"
+RECIPIENT_EMAILS = [
+    "ines.abdelaziz19@gmail.com",
+    "ihssanboutebicha@gmail.com",
+    "ja_boukezzi@esi.dz",
+"jf_bentaleb@esi.dz",
+"ja_slimane@esi.dz ", 
+]
 
 # Persist ONLY the stable keys here (not the whole table)
 STATE_FILE = "last_results.csv"
@@ -22,7 +28,7 @@ LAST_DAILY_FILE = "last_daily_sent.txt"
 def send_email(subject, body, html_body=None):
     msg = MIMEMultipart("alternative")
     msg["From"] = f"Fac-Habitat Bot <{SENDER_EMAIL}>"
-    msg["To"] = RECIPIENT_EMAIL
+    msg["To"] = ", ".join(RECIPIENT_EMAILS)
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
     if html_body:
