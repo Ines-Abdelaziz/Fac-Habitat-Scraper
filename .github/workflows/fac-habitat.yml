@@ -2,7 +2,7 @@ name: Fac Habitat Bot
 
 on:
   schedule:
-    - cron: "*/30 * * * *" # every 30 minutes
+    - cron: "*/30 * * * *"
   workflow_dispatch:
 
 concurrency:
@@ -26,8 +26,11 @@ jobs:
           path: |
             last_results.csv
             last_daily_sent.txt
-          key: fac-habitat-state-${{ steps.date.outputs.today }}
+          # fixed "latest" pointer for the day
+          key: fac-habitat-state-${{ steps.date.outputs.today }}-latest
+          # fallbacks: any run today, or any previous cache
           restore-keys: |
+            fac-habitat-state-${{ steps.date.outputs.today }}-
             fac-habitat-state-
 
       - name: Set up Python
@@ -41,14 +44,16 @@ jobs:
       - name: Run Fac-Habitat notifier
         env:
           SENDER_EMAIL: "ines.abdelaziz19@gmail.com"
-          RECIPIENT_EMAIL: "ines.abdelaziz@gmail.com"
+          RECIPIENT_EMAILS: "ines.abdelaziz19@gmail.com,ihssanboutebicha@gmail.com,ja_boukezzi@esi.dz"
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
         run: python daily_email_notifier.py
 
       - name: Save updated state to cache
         uses: actions/cache/save@v4
+        continue-on-error: true
         with:
           path: |
             last_results.csv
             last_daily_sent.txt
-          key: fac-habitat-state-${{ steps.date.outputs.today }}
+          # unique per-run => no reservation clashes
+          key: fac-habitat-state-${{ steps.date.outputs.today }}-${{ github.run_id }}
