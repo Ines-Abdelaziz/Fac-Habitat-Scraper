@@ -26,11 +26,8 @@ jobs:
           path: |
             last_results.csv
             last_daily_sent.txt
-          # fixed "latest" pointer for the day
-          key: fac-habitat-state-${{ steps.date.outputs.today }}-latest
-          # fallbacks: any run today, or any previous cache
+          key: fac-habitat-state-${{ steps.date.outputs.today }}
           restore-keys: |
-            fac-habitat-state-${{ steps.date.outputs.today }}-
             fac-habitat-state-
 
       - name: Set up Python
@@ -55,5 +52,4 @@ jobs:
           path: |
             last_results.csv
             last_daily_sent.txt
-          # unique per-run => no reservation clashes
-          key: fac-habitat-state-${{ steps.date.outputs.today }}-${{ github.run_id }}
+          key: fac-habitat-state-${{ steps.date.outputs.today }}
