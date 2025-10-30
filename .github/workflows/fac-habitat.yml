@@ -2,9 +2,10 @@ name: Fac Habitat Bot
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "*/30 * * * *"     # every 30 minutes
   workflow_dispatch:
 
+# Prevent overlapping runs (important for cache consistency)
 concurrency:
   group: fac-habitat-scraper
   cancel-in-progress: true
@@ -12,32 +13,44 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
+
     steps:
+      # --- Step 1: Checkout repo (no need to commit later)
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Get today
+      # --- Step 2: Generate unique key info (date + run number)
+      - name: Prepare cache key variables
         id: date
-        run: echo "today=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+        run: |
+          echo "today=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+          echo "run_number=${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
 
+      # --- Step 3: Restore latest cache (from any previous run today)
       - name: Restore previous state
         uses: actions/cache@v4
         with:
           path: |
             last_results.csv
             last_daily_sent.txt
-          key: fac-habitat-state-${{ steps.date.outputs.today }}
+          # Key = day + run number, ensures uniqueness per run
+          key: fac-habitat-state-${{ steps.date.outputs.today }}-${{ steps.date.outputs.run_number }}
+          # Restore from the latest cache of the same day if available
           restore-keys: |
+            fac-habitat-state-${{ steps.date.outputs.today }}-
             fac-habitat-state-
 
+      # --- Step 4: Setup Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      # --- Step 5: Install dependencies
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # --- Step 6: Run Fac-Habitat notifier
       - name: Run Fac-Habitat notifier
         env:
           SENDER_EMAIL: "ines.abdelaziz19@gmail.com"
@@ -45,6 +58,7 @@ jobs:
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
         run: python daily_email_notifier.py
 
+      # --- Step 7: Save updated state with unique key (rotating cache)
       - name: Save updated state to cache
         uses: actions/cache/save@v4
         continue-on-error: true
@@ -52,4 +66,4 @@ jobs:
           path: |
             last_results.csv
             last_daily_sent.txt
-          key: fac-habitat-state-${{ steps.date.outputs.today }}
+          key: fac-habitat-state-${{ steps.date.outputs.today }}-${{ steps.date.outputs.run_number }}
