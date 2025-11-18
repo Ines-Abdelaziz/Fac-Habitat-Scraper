@@ -16,8 +16,8 @@ RECIPIENT_EMAILS = [
     "ihssanboutebicha@gmail.com",
     "ja_boukezzi@esi.dz",
 "jf_bentaleb@esi.dz",
-"ja_slimane@esi.dz ", 
- "abir.benzaaimia@gmail.com"   
+"ja_slimane@esi.dz ",
+ "abir.benzaamia@gmail.com"   
 ]
 
 # Persist ONLY the stable keys here (not the whole table)
